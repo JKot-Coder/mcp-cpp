@@ -169,7 +169,7 @@ impl<T: Transport + 'static> LspClientTrait for LspClient<T> {
             #[allow(deprecated)]
             root_path: None, // Deprecated
             #[allow(deprecated)]
-            root_uri: root_uri.map(|uri| uri.parse::<lsp_types::Uri>().unwrap()),
+            root_uri: root_uri.and_then(|uri| uri.parse::<lsp_types::Uri>().ok()),
             initialization_options: None,
             work_done_progress_params: lsp_types::WorkDoneProgressParams::default(),
             capabilities: ClientCapabilities {

@@ -65,8 +65,7 @@ async fn test_find_specific_symbol_in_document() {
         "Math.hpp should exist in test project"
     );
 
-    let file_uri_str = format!("file://{}", math_header.display());
-    let file_uri: lsp_types::Uri = file_uri_str.parse().unwrap();
+    let file_uri = crate::symbol::uri_from_pathbuf(&math_header);
 
     // Get document symbols for Math.hpp
     let symbols = get_document_symbols(&component_session, file_uri.clone())
@@ -116,8 +115,7 @@ async fn test_list_all_methods_for_class() {
     let (test_project, component_session) = create_test_component_session().await;
 
     let math_header = test_project.project_root.join("include/Math.hpp");
-    let file_uri_str = format!("file://{}", math_header.display());
-    let file_uri: lsp_types::Uri = file_uri_str.parse().unwrap();
+    let file_uri = crate::symbol::uri_from_pathbuf(&math_header);
 
     let symbols = get_document_symbols(&component_session, file_uri)
         .await
@@ -165,8 +163,7 @@ async fn test_nested_class_symbol_traversal() {
     let (test_project, component_session) = create_test_component_session().await;
 
     let math_header = test_project.project_root.join("include/Math.hpp");
-    let file_uri_str = format!("file://{}", math_header.display());
-    let file_uri: lsp_types::Uri = file_uri_str.parse().unwrap();
+    let file_uri = crate::symbol::uri_from_pathbuf(&math_header);
 
     let symbols = get_document_symbols(&component_session, file_uri)
         .await
@@ -221,8 +218,7 @@ async fn test_template_class_symbol_detection() {
     let (test_project, component_session) = create_test_component_session().await;
 
     let math_header = test_project.project_root.join("include/Math.hpp");
-    let file_uri_str = format!("file://{}", math_header.display());
-    let file_uri: lsp_types::Uri = file_uri_str.parse().unwrap();
+    let file_uri = crate::symbol::uri_from_pathbuf(&math_header);
 
     let symbols = get_document_symbols(&component_session, file_uri)
         .await
@@ -339,8 +335,7 @@ async fn test_hierarchical_vs_flat_response_handling() {
     let (test_project, component_session) = create_test_component_session().await;
 
     let math_header = test_project.project_root.join("include/Math.hpp");
-    let file_uri_str = format!("file://{}", math_header.display());
-    let file_uri: lsp_types::Uri = file_uri_str.parse().unwrap();
+    let file_uri = crate::symbol::uri_from_pathbuf(&math_header);
 
     // This should always succeed due to our hierarchicalDocumentSymbolSupport: true
     let symbols = get_document_symbols(&component_session, file_uri).await;
@@ -490,8 +485,7 @@ async fn test_fuzzy_matching_integration_basic() {
     let (test_project, component_session) = create_test_component_session().await;
 
     let math_header = test_project.project_root.join("include/Math.hpp");
-    let file_uri_str = format!("file://{}", math_header.display());
-    let file_uri: lsp_types::Uri = file_uri_str.parse().unwrap();
+    let file_uri = crate::symbol::uri_from_pathbuf(&math_header);
 
     let symbols = get_document_symbols(&component_session, file_uri)
         .await
@@ -577,8 +571,7 @@ async fn test_fuzzy_matching_integration_scoring() {
     let (test_project, component_session) = create_test_component_session().await;
 
     let math_header = test_project.project_root.join("include/Math.hpp");
-    let file_uri_str = format!("file://{}", math_header.display());
-    let file_uri: lsp_types::Uri = file_uri_str.parse().unwrap();
+    let file_uri = crate::symbol::uri_from_pathbuf(&math_header);
 
     let symbols = get_document_symbols(&component_session, file_uri)
         .await
@@ -613,8 +606,7 @@ async fn test_fuzzy_matching_integration_with_kind_filter() {
     let (test_project, component_session) = create_test_component_session().await;
 
     let math_header = test_project.project_root.join("include/Math.hpp");
-    let file_uri_str = format!("file://{}", math_header.display());
-    let file_uri: lsp_types::Uri = file_uri_str.parse().unwrap();
+    let file_uri = crate::symbol::uri_from_pathbuf(&math_header);
 
     let symbols = get_document_symbols(&component_session, file_uri)
         .await
@@ -653,8 +645,7 @@ async fn test_fuzzy_matching_integration_performance() {
     let (test_project, component_session) = create_test_component_session().await;
 
     let math_header = test_project.project_root.join("include/Math.hpp");
-    let file_uri_str = format!("file://{}", math_header.display());
-    let file_uri: lsp_types::Uri = file_uri_str.parse().unwrap();
+    let file_uri = crate::symbol::uri_from_pathbuf(&math_header);
 
     let symbols = get_document_symbols(&component_session, file_uri)
         .await

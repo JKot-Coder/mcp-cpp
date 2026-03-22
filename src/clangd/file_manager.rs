@@ -9,6 +9,17 @@ use tracing::{debug, info, warn};
 
 use crate::lsp::traits::LspClientTrait;
 
+/// Strip leading slash before Windows drive letter (e.g. `/D:/path` → `D:/path`).
+/// This is a defensive measure in case URI-to-path conversion doesn't fully normalize.
+fn normalize_windows_path(path: &Path) -> std::borrow::Cow<'_, Path> {
+    let s = path.to_string_lossy();
+    if s.len() >= 3 && s.starts_with('/') && s.as_bytes()[2] == b':' {
+        std::borrow::Cow::Owned(PathBuf::from(&s[1..]))
+    } else {
+        std::borrow::Cow::Borrowed(path)
+    }
+}
+
 // ============================================================================
 // File Manager Errors
 // ============================================================================
@@ -83,6 +94,9 @@ impl ClangdFileManager {
             ));
         }
 
+        // Normalize path: strip leading slash before Windows drive letter if present
+        let path = normalize_windows_path(path);
+
         // Convert to absolute path for consistency
         let abs_path = path
             .canonicalize()
@@ -92,8 +106,8 @@ impl ClangdFileManager {
         let content = std::fs::read_to_string(&abs_path)?;
         let content_hash = Self::compute_hash(&content);
 
-        // Generate file URI
-        let uri_string = format!("file://{}", abs_path.display());
+        // Generate file URI (handles Windows UNC paths and backslashes)
+        let uri_string = crate::symbol::path_to_file_uri(&abs_path);
         let uri: lsp_types::Uri = uri_string
             .parse()
             .map_err(|e| FileManagerError::InvalidPath(format!("Invalid URI: {}", e)))?;
@@ -162,6 +176,9 @@ impl ClangdFileManager {
         path: &Path,
         client: &mut impl LspClientTrait,
     ) -> Result<(), FileManagerError> {
+        // Normalize path: strip leading slash before Windows drive letter if present
+        let path = normalize_windows_path(path);
+
         // Convert to absolute path
         let abs_path = path
             .canonicalize()

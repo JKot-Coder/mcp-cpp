@@ -152,9 +152,7 @@ impl ServerHandler for CppServerHandler {
         info!("Executing tool: {}", tool_name);
 
         // Generated dispatch with compile-time safety
-        let result = self
-            .dispatch_tool(&tool_name, params.arguments)
-            .await?;
+        let result = self.dispatch_tool(&tool_name, params.arguments).await?;
 
         log_mcp_message!(Level::INFO, "outgoing", "call_tool", &result);
         log_timing!(

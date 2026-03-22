@@ -574,13 +574,10 @@ pub async fn get_document_symbols(
 ) -> Result<Vec<DocumentSymbol>, AnalyzerError> {
     trace!("Requesting document symbols for URI: {:?}", file_uri);
 
-    // Ensure file is ready
-    let uri_str = file_uri.to_string();
-    let file_path_str = uri_str.strip_prefix("file://").unwrap_or(&uri_str);
+    // Ensure file is ready (uses centralized Windows-safe URI-to-path conversion)
+    let file_path = crate::symbol::file_uri_to_path(&file_uri);
 
-    component_session
-        .ensure_file_ready(Path::new(file_path_str))
-        .await?;
+    component_session.ensure_file_ready(&file_path).await?;
 
     let mut session = component_session.lsp_session().await;
     let client = session.client_mut();

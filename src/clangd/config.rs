@@ -582,14 +582,14 @@ impl ClangdConfig {
     }
 
     /// Get the root URI for LSP initialization
+    ///
+    /// Generates a valid file:// URI with forward slashes.
+    /// On Windows, paths like `D:\Work\project` become `file:///D:/Work/project`.
     pub fn get_root_uri(&self) -> Option<String> {
-        self.lsp_config.root_uri.clone().or_else(|| {
-            // Auto-generate from working directory if not specified
-            Some(format!(
-                "file://{}",
-                self.working_directory.to_string_lossy()
-            ))
-        })
+        self.lsp_config
+            .root_uri
+            .clone()
+            .or_else(|| Some(crate::symbol::path_to_file_uri(&self.working_directory)))
     }
 
     /// Check if verbose tracing is enabled
@@ -714,6 +714,10 @@ mod tests {
 
         let root_uri = config.get_root_uri().unwrap();
         assert!(root_uri.starts_with("file://"));
-        assert!(root_uri.contains(&temp_dir.path().to_string_lossy().to_string()));
+        // URI must use forward slashes (valid URI format, required for Windows compatibility)
+        assert!(
+            !root_uri.contains('\\'),
+            "URI must not contain backslashes: {root_uri}"
+        );
     }
 }

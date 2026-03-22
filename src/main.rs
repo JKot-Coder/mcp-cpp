@@ -19,7 +19,8 @@ use rust_mcp_sdk::schema::{
 };
 
 use rust_mcp_sdk::{
-    McpServer, StdioTransport, TransportOptions, error::SdkResult,
+    McpServer, StdioTransport, TransportOptions,
+    error::SdkResult,
     mcp_server::{McpServerOptions, ToMcpServerHandler, server_runtime},
 };
 use std::path::PathBuf;

@@ -80,10 +80,29 @@ impl ProjectBoundaryFilter {
     fn is_project_file(&self, path: &str) -> bool {
         let file_path = std::path::PathBuf::from(path);
 
+        // Try canonicalize, but also try direct comparison with normalized paths
+        // (canonicalize can fail on Windows with URI-extracted paths like /D:/...)
         if let Ok(canonical_file) = file_path.canonicalize() {
-            canonical_file.starts_with(&self.canonical_source_root)
+            // Strip UNC prefix for comparison
+            let canonical_str = canonical_file.to_string_lossy();
+            let clean_file = canonical_str
+                .strip_prefix(r"\\?\")
+                .unwrap_or(&canonical_str);
+            let source_str = self.canonical_source_root.to_string_lossy();
+            let clean_source = source_str.strip_prefix(r"\\?\").unwrap_or(&source_str);
+            clean_file.starts_with(clean_source)
         } else {
-            false
+            // Fallback: normalize and compare directly (handles /D:/... paths from URIs)
+            let normalized = path.replace('\\', "/");
+            // Strip UNC prefix BEFORE replacing backslashes
+            let source_str = self.canonical_source_root.to_string_lossy();
+            let source_no_unc = source_str.strip_prefix(r"\\?\").unwrap_or(&source_str);
+            let source_clean = source_no_unc.replace('\\', "/");
+            // Try direct starts_with, then strip leading / for Windows drive paths
+            normalized.starts_with(&source_clean) || {
+                let stripped = normalized.strip_prefix('/').unwrap_or(&normalized);
+                stripped.starts_with(&source_clean)
+            }
         }
     }
 }
@@ -94,16 +113,14 @@ impl WorkspaceSymbolFilter for ProjectBoundaryFilter {
             return true;
         }
 
-        let uri_str = match &symbol.location {
-            lsp_types::OneOf::Left(location) => location.uri.as_str(),
-            lsp_types::OneOf::Right(workspace_location) => workspace_location.uri.as_str(),
+        let uri = match &symbol.location {
+            lsp_types::OneOf::Left(location) => &location.uri,
+            lsp_types::OneOf::Right(workspace_location) => &workspace_location.uri,
         };
 
-        if let Some(path) = uri_str.strip_prefix("file://") {
-            self.is_project_file(path)
-        } else {
-            true // Default to inclusion when URI parsing fails
-        }
+        // Use centralized Windows-safe URI-to-path conversion
+        let path = crate::symbol::file_uri_to_path(uri);
+        self.is_project_file(&path.to_string_lossy())
     }
 }
 

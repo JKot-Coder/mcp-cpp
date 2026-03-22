@@ -219,12 +219,7 @@ impl FileLocation {
 
     /// Get the LSP URI for this file location
     pub fn get_uri(&self) -> lsp_types::Uri {
-        let path_str = self.file_path.to_string_lossy();
-        let uri_str = if path_str.starts_with('/') {
-            format!("file://{}", path_str)
-        } else {
-            format!("file:///{}", path_str)
-        };
+        let uri_str = path_to_file_uri(&self.file_path);
         uri_str.parse().expect("Failed to parse URI from file path")
     }
 
@@ -311,19 +306,79 @@ impl From<LspLocation> for FilePosition {
     fn from(location: LspLocation) -> Self {
         FilePosition {
             position: location.range.start.into(),
-            file_path: location.uri.path().to_string().into(),
+            file_path: file_uri_to_path(&location.uri),
         }
     }
 }
 
 pub fn uri_from_pathbuf(path: &Path) -> lsp_types::Uri {
     use std::str::FromStr;
-    let uri_string = format!("file://{}", path.to_string_lossy());
+    let uri_string = path_to_file_uri(path);
     lsp_types::Uri::from_str(&uri_string).expect("Failed to convert PathBuf to Uri")
 }
 
+/// Characters that need percent-encoding in file URI path segments.
+/// We encode everything that's not valid in a URI path component,
+/// but preserve `/` (path separator) and `:` (drive letter on Windows).
+const PATH_ENCODE_SET: &percent_encoding::AsciiSet = &percent_encoding::CONTROLS
+    .add(b' ')
+    .add(b'#')
+    .add(b'%')
+    .add(b'?')
+    .add(b'[')
+    .add(b']')
+    .add(b'{')
+    .add(b'}');
+
+/// Convert a filesystem path to a proper file:// URI.
+/// Handles Windows quirks: UNC prefix from canonicalize(), backslashes, drive letters.
+/// Percent-encodes special characters (spaces, `#`, `%`, etc.) for RFC 3986 compliance.
+pub fn path_to_file_uri(path: &Path) -> String {
+    let mut path_str = path.to_string_lossy().to_string();
+
+    // Strip Windows UNC prefix (\\?\ ) produced by canonicalize()
+    if path_str.starts_with(r"\\?\") {
+        path_str = path_str[4..].to_string();
+    }
+
+    // Replace backslashes with forward slashes
+    path_str = path_str.replace('\\', "/");
+
+    // Percent-encode special characters
+    let encoded = percent_encoding::utf8_percent_encode(&path_str, PATH_ENCODE_SET).to_string();
+
+    // Build file URI with correct number of slashes
+    if encoded.starts_with('/') {
+        format!("file://{encoded}")
+    } else {
+        // Windows drive letter path like C:/foo
+        format!("file:///{encoded}")
+    }
+}
+
+/// Convert a file:// URI to a filesystem path.
+/// Handles:
+/// - Windows drive letter prefix: `uri.path()` returns `/D:/path` → strips leading `/`
+/// - Percent-encoding: `%20` → space, `%23` → `#`, etc.
+pub fn file_uri_to_path(uri: &lsp_types::Uri) -> PathBuf {
+    let raw_path = uri.path().to_string();
+
+    // Decode percent-encoded characters (e.g. %20 → space)
+    let decoded = percent_encoding::percent_decode_str(&raw_path)
+        .decode_utf8_lossy()
+        .to_string();
+
+    // On Windows, uri.path() for file:///D:/foo returns "/D:/foo"
+    // Strip the leading slash before a drive letter
+    if decoded.len() >= 3 && decoded.starts_with('/') && decoded.as_bytes()[2] == b':' {
+        PathBuf::from(&decoded[1..])
+    } else {
+        PathBuf::from(&decoded)
+    }
+}
+
 pub fn pathbuf_from_uri(uri: &lsp_types::Uri) -> PathBuf {
-    uri.path().to_string().into()
+    file_uri_to_path(uri)
 }
 
 impl From<FilePosition> for LspLocation {
@@ -533,6 +588,84 @@ mod tests {
         assert_eq!(loc.range.start.column, 2);
         assert_eq!(loc.range.end.line, 11);
         assert_eq!(loc.range.end.column, 6);
+    }
+
+    #[test]
+    fn test_file_uri_to_path_windows_drive() {
+        let uri: lsp_types::Uri = "file:///D:/RR/src/file.hpp".parse().unwrap();
+        let path = file_uri_to_path(&uri);
+        let path_str = path.to_string_lossy();
+        assert!(
+            !path_str.starts_with("/D:"),
+            "path must not start with /D:, got: {path_str}"
+        );
+        assert!(path_str.contains("D:"));
+    }
+
+    #[test]
+    fn test_file_uri_to_path_unix() {
+        let uri: lsp_types::Uri = "file:///usr/local/src/file.cpp".parse().unwrap();
+        let path = file_uri_to_path(&uri);
+        assert!(path.to_string_lossy().starts_with("/usr"));
+    }
+
+    #[test]
+    fn test_roundtrip_path_uri_path() {
+        let original = PathBuf::from("D:/Work/project/src/main.cpp");
+        let uri_str = path_to_file_uri(&original);
+        let uri: lsp_types::Uri = uri_str.parse().unwrap();
+        let roundtrip = file_uri_to_path(&uri);
+        assert_eq!(
+            roundtrip.to_string_lossy().replace('\\', "/"),
+            "D:/Work/project/src/main.cpp"
+        );
+    }
+
+    #[test]
+    fn test_file_uri_to_path_percent_encoded() {
+        // clangd may return URIs with percent-encoded characters
+        let uri: lsp_types::Uri = "file:///D:/Work/my%20project/src/file.hpp".parse().unwrap();
+        let path = file_uri_to_path(&uri);
+        let path_str = path.to_string_lossy();
+        assert!(
+            !path_str.starts_with("/D:"),
+            "path must not start with /D:, got: {path_str}"
+        );
+        assert!(
+            path_str.contains("my project"),
+            "percent-encoding must be decoded, got: {path_str}"
+        );
+    }
+
+    #[test]
+    fn test_path_to_file_uri_percent_encodes_spaces() {
+        let path = PathBuf::from("D:/Work/my project/src/file.hpp");
+        let uri_str = path_to_file_uri(&path);
+        assert!(
+            uri_str.contains("my%20project"),
+            "spaces must be percent-encoded, got: {uri_str}"
+        );
+        // Roundtrip: encoding then decoding should return original path
+        let uri: lsp_types::Uri = uri_str.parse().unwrap();
+        let roundtrip = file_uri_to_path(&uri);
+        assert_eq!(
+            roundtrip.to_string_lossy().replace('\\', "/"),
+            "D:/Work/my project/src/file.hpp"
+        );
+    }
+
+    #[test]
+    fn test_path_to_file_uri_unc_prefix() {
+        let path = PathBuf::from(r"\\?\D:\Work\project\src\main.cpp");
+        let uri_str = path_to_file_uri(&path);
+        assert!(
+            !uri_str.contains(r"\\?\"),
+            "UNC prefix must be stripped, got: {uri_str}"
+        );
+        assert!(
+            uri_str.starts_with("file:///D:"),
+            "must produce valid Windows file URI, got: {uri_str}"
+        );
     }
 
     #[test]
