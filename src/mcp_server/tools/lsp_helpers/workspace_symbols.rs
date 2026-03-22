@@ -76,30 +76,26 @@ impl ProjectBoundaryFilter {
         }
     }
 
+    /// Normalize a path string: strip UNC prefix and replace backslashes with forward slashes.
+    fn normalize_for_comparison(path: &str) -> String {
+        let without_unc = path.strip_prefix(r"\\?\").unwrap_or(path);
+        without_unc.replace('\\', "/")
+    }
+
     /// Check if a file path belongs to the project
     fn is_project_file(&self, path: &str) -> bool {
         let file_path = std::path::PathBuf::from(path);
+        let source_clean =
+            Self::normalize_for_comparison(&self.canonical_source_root.to_string_lossy());
 
-        // Try canonicalize, but also try direct comparison with normalized paths
-        // (canonicalize can fail on Windows with URI-extracted paths like /D:/...)
         if let Ok(canonical_file) = file_path.canonicalize() {
-            // Strip UNC prefix for comparison
-            let canonical_str = canonical_file.to_string_lossy();
-            let clean_file = canonical_str
-                .strip_prefix(r"\\?\")
-                .unwrap_or(&canonical_str);
-            let source_str = self.canonical_source_root.to_string_lossy();
-            let clean_source = source_str.strip_prefix(r"\\?\").unwrap_or(&source_str);
-            clean_file.starts_with(clean_source)
+            let clean_file = Self::normalize_for_comparison(&canonical_file.to_string_lossy());
+            clean_file.starts_with(&source_clean)
         } else {
             // Fallback: normalize and compare directly (handles /D:/... paths from URIs)
-            let normalized = path.replace('\\', "/");
-            // Strip UNC prefix BEFORE replacing backslashes
-            let source_str = self.canonical_source_root.to_string_lossy();
-            let source_no_unc = source_str.strip_prefix(r"\\?\").unwrap_or(&source_str);
-            let source_clean = source_no_unc.replace('\\', "/");
-            // Try direct starts_with, then strip leading / for Windows drive paths
+            let normalized = Self::normalize_for_comparison(path);
             normalized.starts_with(&source_clean) || {
+                // Strip leading / for Windows drive paths (e.g. /D:/Work → D:/Work)
                 let stripped = normalized.strip_prefix('/').unwrap_or(&normalized);
                 stripped.starts_with(&source_clean)
             }

@@ -217,10 +217,15 @@ impl FileLocation {
         }
     }
 
-    /// Get the LSP URI for this file location
+    /// Get the LSP URI for this file location.
+    /// # Panics
+    /// Panics if `path_to_file_uri` produces an invalid URI — should not happen
+    /// since the function controls the output format.
     pub fn get_uri(&self) -> lsp_types::Uri {
         let uri_str = path_to_file_uri(&self.file_path);
-        uri_str.parse().expect("Failed to parse URI from file path")
+        uri_str
+            .parse()
+            .expect("path_to_file_uri produced invalid URI — this is a bug")
     }
 
     /// Convert FileLocation to compact LSP-style range format
@@ -377,10 +382,6 @@ pub fn file_uri_to_path(uri: &lsp_types::Uri) -> PathBuf {
     }
 }
 
-pub fn pathbuf_from_uri(uri: &lsp_types::Uri) -> PathBuf {
-    file_uri_to_path(uri)
-}
-
 impl From<FilePosition> for LspLocation {
     fn from(file_position: FilePosition) -> Self {
         LspLocation {
@@ -397,7 +398,7 @@ impl From<&LspLocation> for FileLocation {
     fn from(location: &LspLocation) -> Self {
         FileLocation {
             range: Range::from(location.range),
-            file_path: pathbuf_from_uri(&location.uri),
+            file_path: file_uri_to_path(&location.uri),
         }
     }
 }
@@ -406,7 +407,7 @@ impl From<&LspLocationLink> for FileLocation {
     fn from(location_link: &LspLocationLink) -> Self {
         FileLocation {
             range: Range::from(location_link.target_selection_range),
-            file_path: pathbuf_from_uri(&location_link.target_uri),
+            file_path: file_uri_to_path(&location_link.target_uri),
         }
     }
 }
